@@ -11,7 +11,6 @@ use tower::ServiceBuilder;
 
 #[derive(Clone)]
 struct CronService {
-    db: PgPool,
     message: String,
 }
 impl CronService {
@@ -56,14 +55,13 @@ struct MyService {
 #[shuttle_runtime::async_trait]
 impl shuttle_runtime::Service for MyService {
     async fn bind(self, _addr: std::net::SocketAddr) -> Result<(), shuttle_runtime::Error> {
-        let storage = PostgresStorage::new(self.db.clone());
+        let storage = PostgresStorage::new(self.db);
         // set up storage
         storage.setup().await.expect("Unable to run migrations :(");
 
         let schedule = Schedule::from_str("* * * * * *").expect("Couldn't start the scheduler!");
 
         let cron_service_ext = CronService {
-            db: self.db.clone(),
             message: "Hello world".to_string(),
         };
 
@@ -83,19 +81,9 @@ impl shuttle_runtime::Service for MyService {
             )
             .build(service.clone());
 
-        // create a worker that uses the service created from the cronjob
-        let workertwo = WorkerBuilder::new("morning-cereal")
-            .with_storage(storage.clone())
-            .stream(
-                CronStream::new(schedule)
-                    .timer(apalis::prelude::timer::TokioTimer)
-                    .to_stream(),
-            )
-            .build(service);
         // start your worker up
         Monitor::new()
             .register(worker)
-            .register(workertwo)
             .run()
             .await
             .expect("Unable to start worker");
